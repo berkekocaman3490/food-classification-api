@@ -18,15 +18,11 @@ app.add_middleware(
 
 class PredictReqArgs(BaseModel):
     ilce: str
-    koy: str
     tarimSekli: str
     fosfor: float
     potasyum: float
-    organikMadde: float
-    ph: float
     kirec: float
     toplamTuz: float
-    saturasyon: float
 
 @app.post("/fruits/")
 async def get_fruit_scores(reqArgs: PredictReqArgs):
