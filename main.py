@@ -21,8 +21,7 @@ class PredictReqArgs(BaseModel):
     tarimSekli: str
     fosfor: float
     potasyum: float
-    kirec: float
-    toplamTuz: float
+    ph: float
 
 @app.post("/fruits/")
 async def get_fruit_scores(reqArgs: PredictReqArgs):

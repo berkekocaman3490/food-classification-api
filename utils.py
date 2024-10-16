@@ -11,11 +11,16 @@ try:
     model_saturasyon = xgb.Booster()
     model_saturasyon.load_model('./weights/xgb_model_saturasyon.model')
 
-    model_ph = xgb.Booster()
-    model_ph.load_model('./weights/xgb_model_ph.model')
+    model_kirec = xgb.Booster()  # Replace ph with kirec
+    model_kirec.load_model('./weights/xgb_model_kirec.model')
 
     xgb_model = XGBClassifier()
-    xgb_model.load_model('./weights/xgb_classifier.model')
+    xgb_model.load_model('./weights/xgb_classifier.model')  # Load your XGBClassifier model file
+
+    # Load the label encoders
+    label_encoder_ilce = joblib.load('./weights/label_encoder_ilce.pkl')
+    label_encoder_tarim = joblib.load('./weights/label_encoder_tarim.pkl')
+    label_encoder_urun = joblib.load('./weights/label_encoder_urun.pkl')
     
 except FileNotFoundError:
     raise Exception("Model file not found. Make sure 'xgb_best_model.pkl' exists.")
@@ -34,8 +39,7 @@ def predict(req_body):
     tarim_sekli = req_body['tarimSekli']
     fosfor = req_body['fosfor']
     potasyum = req_body['potasyum']
-    kirec = req_body['kirec']
-    toplam_tuz = req_body['toplamTuz']
+    ph = req_body['ph']
 
     # Apply label encoding for categorical fields
     ilce_encoded = label_encoder_ilce.transform([ilce])[0]
@@ -49,47 +53,48 @@ def predict(req_body):
         'tarim_sekli_encoded': tarim_sekli_encoded, 
         'potasyum': potasyum,
         'fosfor': fosfor,
-        'kirec': kirec,
-        'toplam_tuz': toplam_tuz,
+        'ph': ph,
     }
 
     # Convert the input_data dictionary to a DataFrame for compatibility with DMatrix
     input_df = pd.DataFrame([input_data])
 
     # Step 1: Predict 'organik_madde'
-    dmatrix_input = xgb.DMatrix(input_df[['ilce_encoded', 'tarim_sekli_encoded', 'potasyum', 'fosfor', 'kirec', 'toplam_tuz']])
+    dmatrix_input = xgb.DMatrix(input_df[['ilce_encoded', 'tarim_sekli_encoded', 'potasyum', 'fosfor', 'ph']])  # Removed 'toplam_tuz'
     predicted_organik_madde = model_organik.predict(dmatrix_input)
+
 
     # Step 2: Predict 'saturasyon' using predicted 'organik_madde'
     input_df['organik_madde'] = predicted_organik_madde
-    dmatrix_input_with_organik = xgb.DMatrix(input_df[['ilce_encoded', 'tarim_sekli_encoded', 'potasyum', 'fosfor', 'kirec', 'toplam_tuz', 'organik_madde']])
+    dmatrix_input_with_organik = xgb.DMatrix(input_df[['ilce_encoded', 'tarim_sekli_encoded', 'potasyum', 'fosfor', 'ph', 'organik_madde']])  # Removed 'toplam_tuz'
     predicted_saturasyon = model_saturasyon.predict(dmatrix_input_with_organik)
 
-    # Step 3: Predict 'ph' using predicted 'saturasyon'
+    # Step 3: Predict 'kirec' using predicted 'saturasyon' (replace ph with kirec)
     input_df['saturasyon'] = predicted_saturasyon
-    dmatrix_input_with_saturasyon = xgb.DMatrix(input_df[['ilce_encoded', 'tarim_sekli_encoded', 'potasyum', 'fosfor', 'kirec', 'toplam_tuz', 'saturasyon']])
-    predicted_ph = model_ph.predict(dmatrix_input_with_saturasyon)
+    dmatrix_input_with_saturasyon = xgb.DMatrix(input_df[['ilce_encoded', 'tarim_sekli_encoded', 'potasyum', 'fosfor', 'ph', 'saturasyon']])  # Removed 'toplam_tuz'
+    predicted_kirec = model_kirec.predict(dmatrix_input_with_saturasyon)
+
 
     # Add the predictions back to the input_data dictionary
     input_data['organikMadde'] = predicted_organik_madde[0]
     input_data['saturasyon'] = predicted_saturasyon[0]
-    input_data['ph'] = predicted_ph[0]
+    input_data['kirec'] = predicted_kirec[0]  # Replaced 'ph' with 'kirec'
 
     # Step 4: Use the classification model to predict 'urun'
-    input_df['ph'] = predicted_ph
+    input_df['kirec'] = predicted_kirec  # Replaced 'ph' with 'kirec'
     # Create the full feature set for classification
-    classification_features = input_df[['ilce_encoded', 'tarim_sekli_encoded', 'potasyum', 'fosfor', 'kirec', 'toplam_tuz', 'organik_madde', 'saturasyon', 'ph']]
+    classification_features = input_df[['ilce_encoded', 'tarim_sekli_encoded', 'potasyum', 'fosfor', 'ph', 'organik_madde', 'saturasyon', 'kirec']]  # Removed 'toplam_tuz'
 
-    # Predict the encoded product (urun) and get the probabilities
+    # # Predict the encoded product (urun) and get the probabilities
     class_probabilities = xgb_model.predict_proba(classification_features)
 
-    # Get the indices of the top 2 classes with highest probabilities
+    # # Get the indices of the top 2 classes with highest probabilities
     top_2_indices = np.argsort(class_probabilities[0])[-2:][::-1]
 
-    # Decode the top 2 predicted 'urun' labels
+    # # Decode the top 2 predicted 'urun' labels
     top_2_urun = label_encoder_urun.inverse_transform(top_2_indices)
 
-    # Add the top 2 predicted 'urun' to the input_data dictionary
+    # # Add the top 2 predicted 'urun' to the input_data dictionary
     input_data['urun'] = top_2_urun.tolist()
     
     return_data = {
@@ -99,12 +104,11 @@ def predict(req_body):
         'tarim_sekli': tarim_sekli,
         'potasyum': input_data['potasyum'],
         'fosfor': input_data['fosfor'],
-        'kirec': input_data['kirec'],
-        'toplam_tuz': input_data['toplam_tuz'],
-        'organikMadde': input_data['organikMadde'].item(),
-        'saturasyon': input_data['saturasyon'].item(),
-        'ph': input_data['ph'].item(),
-        'urun': input_data['urun']  # Top 2 predicted products
+        'ph': input_data['ph'],
+        'organikMadde': max(0, input_data['organikMadde'].item()),
+        'saturasyon':max(0, input_data['saturasyon'].item()),
+        'kirec': max(0, input_data['kirec'].item()),  # Changed 'ph' to 'kirec'
+        'urun': input_data['urun'],  # Top 2 predicted products,
     }
     return return_data
 
