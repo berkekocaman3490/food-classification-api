@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict
-from utils import predict
+from utils import predict_all
 
 app = FastAPI()
 
@@ -18,9 +18,8 @@ app.add_middleware(
 
 class PredictReqArgs(BaseModel):
     ilce: str
-    tarimSekli: str
-    fosfor: float
     potasyum: float
+    fosfor: float
     ph: float
 
 @app.post("/fruits/")
@@ -31,8 +30,9 @@ async def get_fruit_scores(reqArgs: PredictReqArgs):
         raise HTTPException(status_code=400, detail="No fruit data provided.")
 
     # Generating a mock score for each fruit
-    result = predict(reqArgs.model_dump())
+    result = predict_all(reqArgs.model_dump())
+    print(result)
     return {"predictions": result}
 
 # The server can be started using Uvicorn with the command:
-# uvicorn filename:app --reload
+# uvicorn main:app --reload
